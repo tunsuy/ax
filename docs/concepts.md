@@ -33,6 +33,6 @@ A binding can also carry a `goal`, a plain-language description of the environme
 
 ## Model
 
-A configuration for a model provider and its parameters: which provider to call, the model identifier, provider-specific generation parameters such as max_tokens, and references to the Kubernetes secret holding the credentials.
+A configuration for a model provider and its parameters: which provider to call, the model identifier, provider-specific generation parameters such as Gemini's `maxOutputTokens`, and references to the Kubernetes secret holding the credentials. `spec.parameters` reaches the provider's API as-is, so every entry carries the name that API gives it.
 
 Declaring models as cluster resources makes them manageable and reusable across tasks. The configuration lives in one place instead of in every agent's environment, so rotating a key, pinning a new model version, or tuning parameters is a single `ax apply` rather than a hunt through task definitions. AX's own components read `Model` resources as well, for example when planning a workspace from a goal.

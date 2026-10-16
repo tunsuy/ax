@@ -285,6 +285,112 @@ func TestClient_DefaultModelStore(t *testing.T) {
 	}
 }
 
+// TestClient_GeminiGenerationConfig pins the wire shape of a Gemini request:
+// Model parameters are generation settings named the way the Gemini API names
+// them, so they have to reach generationConfig unchanged, systemInstruction has
+// to stay out of it, and per-request values have to win. Numbers are float64
+// because that is what a Model resource's parameters decode to.
+func TestClient_GeminiGenerationConfig(t *testing.T) {
+	tests := []struct {
+		name       string
+		parameters map[string]any
+		req        *model.GenerateRequest
+		wantConfig map[string]any
+		wantSys    string
+	}{
+		{
+			name: "parameters pass through with Gemini names",
+			parameters: map[string]any{
+				"temperature":       0.3,
+				"maxOutputTokens":   float64(2048),
+				"topP":              0.9,
+				"systemInstruction": "be brief",
+			},
+			req: &model.GenerateRequest{Prompt: "Plan Go setup"},
+			wantConfig: map[string]any{
+				"temperature":     0.3,
+				"maxOutputTokens": float64(2048),
+				"topP":            0.9,
+			},
+			wantSys: "be brief",
+		},
+		{
+			name:       "per-request values override the configured ones",
+			parameters: map[string]any{"temperature": 0.3, "maxOutputTokens": float64(2048)},
+			req: &model.GenerateRequest{
+				Prompt:          "Plan Go setup",
+				Temperature:     0.9,
+				MaxOutputTokens: 128,
+			},
+			wantConfig: map[string]any{"temperature": 0.9, "maxOutputTokens": float64(128)},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var sent struct {
+				SystemInstruction struct {
+					Parts []struct {
+						Text string `json:"text"`
+					} `json:"parts"`
+				} `json:"systemInstruction"`
+				GenerationConfig map[string]any `json:"generationConfig"`
+			}
+
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+					t.Errorf("decoding request body: %v", err)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"candidates": []map[string]any{{
+						"content": map[string]any{"parts": []map[string]string{{"text": "ok"}}},
+					}},
+				})
+			}))
+			defer ts.Close()
+
+			client := model.NewClient(
+				model.Config{
+					Provider:   model.ProviderGoogle,
+					Model:      "gemini-3.8-flash",
+					BaseURL:    ts.URL,
+					APIKey:     "test-api-key",
+					Parameters: tt.parameters,
+				},
+				model.WithHTTPClient(ts.Client()),
+			)
+
+			if _, err := client.Generate(context.Background(), tt.req); err != nil {
+				t.Fatalf("Generate failed: %v", err)
+			}
+
+			if len(sent.GenerationConfig) != len(tt.wantConfig) {
+				t.Errorf("generationConfig = %v, want %v", sent.GenerationConfig, tt.wantConfig)
+			}
+			for k, want := range tt.wantConfig {
+				if got := sent.GenerationConfig[k]; got != want {
+					t.Errorf("generationConfig[%q] = %v, want %v", k, got, want)
+				}
+			}
+			if _, ok := sent.GenerationConfig["systemInstruction"]; ok {
+				t.Errorf("systemInstruction is not a generation parameter, got %v", sent.GenerationConfig)
+			}
+
+			switch {
+			case tt.wantSys == "":
+				if len(sent.SystemInstruction.Parts) != 0 {
+					t.Errorf("expected no systemInstruction, got %+v", sent.SystemInstruction)
+				}
+			default:
+				if len(sent.SystemInstruction.Parts) != 1 || sent.SystemInstruction.Parts[0].Text != tt.wantSys {
+					t.Errorf("systemInstruction = %+v, want %q", sent.SystemInstruction, tt.wantSys)
+				}
+			}
+		})
+	}
+}
+
 // params builds a Struct for a ModelSpec's parameters, failing the test on
 // unsupported value types.
 func params(t *testing.T, m map[string]any) *structpb.Struct {

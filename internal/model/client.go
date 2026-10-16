@@ -125,13 +125,16 @@ func DefaultConfig() Config {
 	}
 }
 
-// GenerateRequest specifies the input for model inference.
+// GenerateRequest specifies the input for model inference. Generation settings
+// are named after the provider's own API, the same names the Config Parameters
+// map uses, so setting one here and setting it on the Model resource mean the
+// same thing: MaxOutputTokens is Gemini's maxOutputTokens, not max_tokens.
 type GenerateRequest struct {
 	Model             string  `json:"model,omitempty"`
 	Prompt            string  `json:"prompt"`
 	SystemInstruction string  `json:"systemInstruction,omitempty"`
 	Temperature       float64 `json:"temperature,omitempty"`
-	MaxTokens         int     `json:"maxTokens,omitempty"`
+	MaxOutputTokens   int     `json:"maxOutputTokens,omitempty"`
 }
 
 // GenerateResponse holds the completion output and token statistics.
@@ -480,7 +483,7 @@ func (c *Client) Generate(ctx context.Context, req *GenerateRequest) (*GenerateR
 		Prompt:            req.Prompt,
 		SystemInstruction: sysInst,
 		Temperature:       req.Temperature,
-		MaxTokens:         req.MaxTokens,
+		MaxOutputTokens:   req.MaxOutputTokens,
 	}
 
 	provider := strings.ToLower(c.cfg.Provider)
@@ -536,8 +539,8 @@ func (c *Client) generateGoogle(ctx context.Context, req *GenerateRequest) (*Gen
 	if req.Temperature > 0 {
 		genConfig["temperature"] = req.Temperature
 	}
-	if req.MaxTokens > 0 {
-		genConfig["maxOutputTokens"] = req.MaxTokens
+	if req.MaxOutputTokens > 0 {
+		genConfig["maxOutputTokens"] = req.MaxOutputTokens
 	}
 	if len(genConfig) > 0 {
 		payload["generationConfig"] = genConfig

@@ -127,5 +127,5 @@ spec:
     name: anthropic-api-secret
     key: ANTHROPIC_API_KEY
   parameters:
-    maxTokens: 16000
+    max_tokens: 16000
 ```
